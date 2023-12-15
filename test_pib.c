@@ -60,7 +60,7 @@ PHP_FUNCTION(fahrenheit_to_celsius)
 		return;
 	}
 	
-	RETURN_DOUBLE(php_fahrenheit_to_celsius(f))
+	RETURN_DOUBLE(php_fahrenheit_to_celsius(f));
 }
 
 static double php_celsius_to_fahrenheit(double c)
@@ -286,6 +286,12 @@ ZEND_END_ARG_INFO();
 ZEND_BEGIN_ARG_INFO_EX(arginfo_pib_guess, 0, 0, 1)
     ZEND_ARG_INFO(0, num)
 ZEND_END_ARG_INFO();
+
+ZEND_BEGIN_ARG_INFO(arginfo_pib_reset, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO(arginfo_pib_get_scores, 0)
+ZEND_END_ARG_INFO()
 /* }}} */
 
 /* {{{ test_pib_functions[]
@@ -299,8 +305,8 @@ static const zend_function_entry test_pib_functions[] = {
 	PHP_FE(multiple_fahrenheit_to_celsius, arginfo_multiple_fahrenheit_to_celsius)
 	PHP_FE(fahrenheit_to_celsius_ref, arginfo_fahrenheit_to_celsius_ref)
 	PHP_FE(pib_guess, arginfo_pib_guess)
-	PHP_FE(pib_reset, NULL)
-	PHP_FE(pib_get_scores, NULL)
+	PHP_FE(pib_reset, arginfo_pib_reset)
+	PHP_FE(pib_get_scores, arginfo_pib_get_scores)
 	PHP_FE_END
 };
 /* }}} */
