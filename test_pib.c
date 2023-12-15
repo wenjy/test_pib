@@ -139,7 +139,7 @@ PHP_FUNCTION(fahrenheit_to_celsius_ref)
 }
 
 /* 
-* 真正的 C 全局 定义保护变量的结构体 解析为 :
+* 定义保护变量的结构体 解析为 :
 *
 * typedef struct _zend_test_pib_globals {
 *    zend_long rnd;
@@ -155,12 +155,30 @@ ZEND_END_MODULE_GLOBALS(test_pib)
 /* 解析为 zend_test_pib_globals test_pib_globals; */
 ZEND_DECLARE_MODULE_GLOBALS(test_pib)
 
+/**
+ * 真实全局变量是非线程保护的真实 C 全局变量
+ * 规则：在处理请求时，不能安全地写入此类全局变量
+ * 通常在 PHP 中，我们需要此类变量并将其用作只读变量
+*/
+
+static zend_string *more, *less; // 代替字符返回
+static zend_ulong max = 100;
+
+static void register_persistent_string(char *str, zend_string **result)
+{
+	// 初始化持久字符
+    *result = zend_string_init(str, strlen(str), 1);
+    zend_string_hash_val(*result);
+
+    GC_ADD_FLAGS(*result, IS_STR_INTERNED);
+}
+
 static void pib_rnd_init(void)
 {
 	/* 重置当前分数 */
     TEST_PIB_G(cur_score) = 0;
     /* 在 0 到 100 之间随机一个数字 */
-    php_random_int(0, 100, &TEST_PIB_G(rnd), 0);
+    php_random_int(0, max, &TEST_PIB_G(rnd), 0);
 }
 
 PHP_FUNCTION(pib_guess)
@@ -181,10 +199,10 @@ PHP_FUNCTION(pib_guess)
 	TEST_PIB_G(cur_score)++;
 
     if (r < TEST_PIB_G(rnd)) {
-        RETURN_STRING("more");
+        RETURN_STR(more);
     }
 
-    RETURN_STRING("less");
+    RETURN_STR(less);
 }
 
 PHP_FUNCTION(pib_get_scores)
@@ -205,20 +223,47 @@ PHP_FUNCTION(pib_reset)
     pib_rnd_init();
 }
 
+/* {{{ PHP_GINIT_FUNCTION
+ */
 PHP_GINIT_FUNCTION(test_pib)
 {
     /* ZEND_SECURE_ZERO 是 memset(0)。也可以解析为 bzero() */
     ZEND_SECURE_ZERO(test_pib_globals, sizeof(*test_pib_globals));
 }
+/* }}} */
 
+/* {{{ PHP_MINIT_FUNCTION
+ */
 PHP_MINIT_FUNCTION(test_pib)
 {
 	// CONST_CS 大小写敏感 CONST_PERSISTENT 持久常量
     REGISTER_LONG_CONSTANT("TEMP_CONVERTER_TO_CELSIUS", TEMP_CONVERTER_TO_CELSIUS, CONST_CS|CONST_PERSISTENT);
     REGISTER_LONG_CONSTANT("TEMP_CONVERTER_TO_FAHRENHEIT", TEMP_CONVERTER_TO_FAHRENHEIT, CONST_CS|CONST_PERSISTENT);
 
+    register_persistent_string("more", &more);
+	register_persistent_string("less", &less);
+
+	char *pib_max;
+    if (pib_max = getenv("PIB_RAND_MAX")) {
+        if (!strchr(pib_max, '-')) {
+            max = ZEND_STRTOUL(pib_max, NULL, 10);
+        }
+    }
+
     return SUCCESS;
 }
+/* }}} */
+
+/* {{{ PHP_MSHUTDOWN_FUNCTION
+ */
+PHP_MSHUTDOWN_FUNCTION(test_pib)
+{
+    zend_string_release(more);
+    zend_string_release(less);
+
+    return SUCCESS;
+}
+/* }}} */
 
 /* {{{ PHP_RINIT_FUNCTION
  */
@@ -317,16 +362,16 @@ zend_module_entry test_pib_module_entry = {
 	STANDARD_MODULE_HEADER,
 	"test_pib",					/* Extension name */
 	test_pib_functions,			/* zend_function_entry 函数入口 */
-	NULL,							/* PHP_MINIT - Module initialization 模块初始化 */
-	NULL,							/* PHP_MSHUTDOWN - Module shutdown 模块关闭 */
+	PHP_MINIT(test_pib),		/* PHP_MINIT - Module initialization 模块初始化 */
+	PHP_MSHUTDOWN(test_pib),	/* PHP_MSHUTDOWN - Module shutdown 模块关闭 */
 	PHP_RINIT(test_pib),			/* PHP_RINIT - Request initialization 请求初始化 */
 	PHP_RSHUTDOWN(test_pib),		/* PHP_RSHUTDOWN - Request shutdown 请求关闭 */
 	PHP_MINFO(test_pib),			/* PHP_MINFO - Module info 模块信息 */
 	PHP_TEST_PIB_VERSION,		/* Version 版本号 */
 	PHP_MODULE_GLOBALS(test_pib),
     PHP_GINIT(test_pib),
-    NULL,
-    NULL,
+	NULL,	/* GSHUTDOWN() */
+	NULL,	/* PRSHUTDOWN() */
     STANDARD_MODULE_PROPERTIES_EX
 };
 /* }}} */
