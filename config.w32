@@ -1,0 +1,7 @@
+ARG_ENABLE('test_pib', 'test_pib support', 'no');
+
+if (PHP_TEST_PIB != 'no') {
+	AC_DEFINE('HAVE_TEST_PIB', 1, 'test_pib support enabled');
+
+	EXTENSION('test_pib', 'test_pib.c', null, '/DZEND_ENABLE_STATIC_TSRMLS_CACHE=1');
+}
