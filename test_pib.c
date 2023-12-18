@@ -224,7 +224,7 @@ static void register_persistent_string(char *str, zend_string **result)
     *result = zend_string_init(str, strlen(str), 1);
     zend_string_hash_val(*result);
 
-	GC_ADD_FLAGS_PIB(*result)
+	GC_ADD_FLAGS(*result, IS_STR_INTERNED);
 }
 
 static void pib_rnd_init(void)

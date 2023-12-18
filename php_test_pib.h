@@ -18,13 +18,6 @@ ZEND_TSRMLS_CACHE_EXTERN()
 #define TEST_PIB_TXT  "PHP TEST PIB Authors"
 #define TEST_PIB_HTML "<h3>" TEST_PIB_TXT "</h3>"
 
-// 兼容 7.0 ~ 7.2
-#ifdef GC_ADD_FLAGS
-#define GC_ADD_FLAGS_PIB(v) GC_ADD_FLAGS(v, IS_STR_INTERNED);
-#else
-#define GC_ADD_FLAGS_PIB(v)  GC_FLAGS(v) |= IS_INTERNED;
-#endif
-
 #ifdef ZTS
 #define TEST_PIB_G(v) ZEND_MODULE_GLOBALS_ACCESSOR(test_pib, v)
 #else
