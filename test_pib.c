@@ -5,6 +5,7 @@
 #endif
 
 #include "php.h"
+#include "main/SAPI.h"
 #include "ext/standard/info.h"
 #include "php_test_pib.h"
 
@@ -14,6 +15,85 @@
 	ZEND_PARSE_PARAMETERS_START(0, 0) \
 	ZEND_PARSE_PARAMETERS_END()
 #endif
+
+/* 
+* 定义保护变量的结构体 解析为 :
+*
+* typedef struct _zend_test_pib_globals {
+*    zend_long rnd;
+* } zend_test_pib_globals;
+*/
+ZEND_BEGIN_MODULE_GLOBALS(test_pib)
+	zend_long rnd;
+	zend_ulong cur_score;
+    zval scores;
+	zend_ulong max_rnd; // ini使用
+ZEND_END_MODULE_GLOBALS(test_pib)
+
+// 创建全局变量
+/* 解析为 zend_test_pib_globals test_pib_globals; */
+ZEND_DECLARE_MODULE_GLOBALS(test_pib)
+
+/**
+ * 真实全局变量是非线程保护的真实 C 全局变量
+ * 规则：在处理请求时，不能安全地写入此类全局变量
+ * 通常在 PHP 中，我们需要此类变量并将其用作只读变量
+*/
+
+static zend_string *more, *less; // 代替字符返回
+static zend_ulong max = 100;
+
+// 验证 0 到 1000 之间的正整数
+ZEND_INI_MH(onUpdateMaxRnd)
+{
+    zend_long tmp;
+
+    zend_long *p;
+#ifndef ZTS
+    char *base = (char *) mh_arg2;
+#else
+    char *base;
+
+    base = (char *) ts_resource(*((int *) mh_arg2));
+#endif
+
+    p = (zend_long *) (base+(size_t) mh_arg1);
+
+    tmp = zend_atol(ZSTR_VAL(new_value), (int)ZSTR_LEN(new_value));
+
+    if (tmp < 0 || tmp > 1000) {
+        return FAILURE;
+    }
+
+    *p = tmp;
+
+    return SUCCESS;
+}
+
+ZEND_INI_DISP(MaxRnd)
+{
+    char disp[100] = {0};
+    zend_ulong tmp = 0;
+
+    if (type == ZEND_INI_DISPLAY_ORIG && ini_entry->modified && ini_entry->orig_value) {
+        tmp = ZEND_STRTOUL(ZSTR_VAL(ini_entry->orig_value), NULL, 10);
+    } else if (ini_entry->value) {
+        tmp = ZEND_STRTOUL(ZSTR_VAL(ini_entry->value), NULL, 10);
+    }
+
+    tmp /= 10;
+
+    memset(disp, '#', tmp);
+    memset(disp + tmp, '.', 100 - tmp);
+
+    php_write(disp, 100);
+}
+
+// 可以使用默认验证器，也可以自己定义函数
+PHP_INI_BEGIN()
+	// STD_PHP_INI_ENTRY_EX("test_pib.rnd_max", "100", PHP_INI_ALL, onUpdateMaxRnd, max_rnd, zend_test_pib_globals, test_pib_globals, MaxRnd)
+	STD_PHP_INI_ENTRY("test_pib.rnd_max", "100", PHP_INI_ALL, onUpdateMaxRnd, max_rnd, zend_test_pib_globals, test_pib_globals)
+PHP_INI_END()
 
 /* {{{ void test_pib_test1()
  */
@@ -138,39 +218,13 @@ PHP_FUNCTION(fahrenheit_to_celsius_ref)
     ZVAL_DOUBLE(param, php_fahrenheit_to_celsius(Z_DVAL_P(param)));
 }
 
-/* 
-* 定义保护变量的结构体 解析为 :
-*
-* typedef struct _zend_test_pib_globals {
-*    zend_long rnd;
-* } zend_test_pib_globals;
-*/
-ZEND_BEGIN_MODULE_GLOBALS(test_pib)
-	zend_long rnd;
-	zend_ulong cur_score;
-    zval scores;
-ZEND_END_MODULE_GLOBALS(test_pib)
-
-// 创建全局变量
-/* 解析为 zend_test_pib_globals test_pib_globals; */
-ZEND_DECLARE_MODULE_GLOBALS(test_pib)
-
-/**
- * 真实全局变量是非线程保护的真实 C 全局变量
- * 规则：在处理请求时，不能安全地写入此类全局变量
- * 通常在 PHP 中，我们需要此类变量并将其用作只读变量
-*/
-
-static zend_string *more, *less; // 代替字符返回
-static zend_ulong max = 100;
-
 static void register_persistent_string(char *str, zend_string **result)
 {
 	// 初始化持久字符
     *result = zend_string_init(str, strlen(str), 1);
     zend_string_hash_val(*result);
 
-    GC_ADD_FLAGS(*result, IS_STR_INTERNED);
+	GC_ADD_FLAGS_PIB(*result)
 }
 
 static void pib_rnd_init(void)
@@ -250,6 +304,9 @@ PHP_MINIT_FUNCTION(test_pib)
         }
     }
 
+	// 注册INI结构
+	REGISTER_INI_ENTRIES();
+
     return SUCCESS;
 }
 /* }}} */
@@ -260,6 +317,9 @@ PHP_MSHUTDOWN_FUNCTION(test_pib)
 {
     zend_string_release(more);
     zend_string_release(less);
+
+	// 释放INI结构
+	UNREGISTER_INI_ENTRIES();
 
     return SUCCESS;
 }
@@ -290,9 +350,27 @@ PHP_RSHUTDOWN_FUNCTION(test_pib)
  */
 PHP_MINFO_FUNCTION(test_pib)
 {
+	time_t t;
+    char cur_time[32];
+
+    time(&t);
+    php_asctime_r(localtime(&t), cur_time);
+
 	php_info_print_table_start();
-	php_info_print_table_header(2, "test_pib support", "enabled");
+		php_info_print_table_header(2, "test_pib support", "enabled");
+		php_info_print_table_row(2, "Current time", cur_time);
 	php_info_print_table_end();
+
+	php_info_print_box_start(0);
+        if (!sapi_module.phpinfo_as_text) {
+            php_write(TEST_PIB_HTML, strlen(TEST_PIB_HTML));
+        } else {
+            php_write(TEST_PIB_TXT, strlen(TEST_PIB_TXT));
+        }
+    php_info_print_box_end();
+
+	// 将 INI 设置显示为扩展信息的一部分
+	DISPLAY_INI_ENTRIES();
 }
 /* }}} */
 
